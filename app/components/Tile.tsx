@@ -73,19 +73,25 @@ export default function Tile({ tile, index, moveTile, updateTile, deleteTile }: 
         ref={ref}
         onClick={handleClick}
         style={{ backgroundColor: tile.backgroundColor || 'white' }}
-        className={`group relative p-2 rounded-lg shadow-sm cursor-move aspect-square w-full h-full
+        className={`group relative p-3 rounded-lg shadow-sm cursor-move aspect-square w-full h-full
           hover:shadow-md transition-all duration-200 
           ${isCurrentlyDragging ? 'opacity-50' : ''}`}
         data-handler-id={handlerId}
       >
-        <div className="flex items-center justify-center h-full w-full">
-          {tile.icon && (
-            <img
-              src={tile.icon}
-              alt="Icon"
-              className="w-10 h-10 object-contain transition-transform duration-200 group-hover:scale-110"
-              draggable={false}
-            />
+        <div className="flex flex-col items-center justify-center h-full w-full">
+          {tile.displayMode === 'icon' ? (
+            tile.icon && (
+              <img
+                src={tile.icon}
+                alt="Icon"
+                className="w-4/5 h-4/5 object-contain transition-transform duration-200 group-hover:scale-105"
+                draggable={false}
+              />
+            )
+          ) : (
+            <span className="text-3xl font-bold text-center w-full px-2 break-words leading-tight">
+              {tile.text}
+            </span>
           )}
         </div>
         
@@ -132,13 +138,54 @@ export default function Tile({ tile, index, moveTile, updateTile, deleteTile }: 
               className="mb-4"
               required
             />
-            <Input
-              type="text"
-              value={editedTile.icon}
-              onChange={(e) => setEditedTile({ ...editedTile, icon: e.target.value })}
-              placeholder="Icon path"
-              className="mb-4"
-            />
+
+            <div className="mb-4">
+              <label className="block text-sm text-gray-500 mb-2">Display Mode:</label>
+              <div className="flex gap-4">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="displayMode"
+                    value="icon"
+                    checked={editedTile.displayMode === 'icon'}
+                    onChange={(e) => setEditedTile({ ...editedTile, displayMode: 'icon' })}
+                    className="mr-2"
+                  />
+                  Icon
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="displayMode"
+                    value="text"
+                    checked={editedTile.displayMode === 'text'}
+                    onChange={(e) => setEditedTile({ ...editedTile, displayMode: 'text' })}
+                    className="mr-2"
+                  />
+                  Text
+                </label>
+              </div>
+            </div>
+
+            {editedTile.displayMode === 'icon' ? (
+              <Input
+                type="text"
+                value={editedTile.icon}
+                onChange={(e) => setEditedTile({ ...editedTile, icon: e.target.value })}
+                placeholder="Icon path"
+                className="mb-4"
+              />
+            ) : (
+              <Input
+                type="text"
+                value={editedTile.text || ''}
+                onChange={(e) => setEditedTile({ ...editedTile, text: e.target.value })}
+                placeholder="Display Text"
+                className="mb-4"
+                required
+              />
+            )}
+
             <div className="mb-6">
               <label className="block text-sm text-gray-500 mb-1">Background Color:</label>
               <Input

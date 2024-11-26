@@ -14,6 +14,8 @@ export interface TileData {
   icon: string
   backgroundColor?: string
   position: number
+  text?: string
+  displayMode: 'icon' | 'text'
 }
 
 interface EmptySlotProps {
