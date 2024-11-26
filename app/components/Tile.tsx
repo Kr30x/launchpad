@@ -20,15 +20,14 @@ export default function Tile({ tile, index, moveTile, updateTile, deleteTile }: 
   const [editedTile, setEditedTile] = useState(tile)
   const [isDragging, setIsDragging] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-
-  const [{ handlerId }, drop] = useDrop({
+  const [{ handlerId }, drop] = useDrop<{ index: number }, void, { handlerId: string | symbol | null }>({
     accept: 'tile',
     collect(monitor) {
       return {
         handlerId: monitor.getHandlerId(),
       }
     },
-    drop(item: { index: number }) {
+    drop(item) {
       if (item.index !== index) {
         console.log('Dropping tile:', item.index, 'onto:', index)
         moveTile(item.index, index)
@@ -71,7 +70,7 @@ export default function Tile({ tile, index, moveTile, updateTile, deleteTile }: 
   return (
     <>
       <div
-        ref={dragDropRef}
+        ref={ref}
         onClick={handleClick}
         style={{ backgroundColor: tile.backgroundColor || 'white' }}
         className={`group relative p-2 rounded-lg shadow-sm cursor-move aspect-square w-full h-full

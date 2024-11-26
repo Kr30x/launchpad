@@ -36,7 +36,7 @@ const EmptySlot = ({ index, onDrop, onClick }: EmptySlotProps) => {
 
   return (
     <div
-      ref={drop}
+      ref={drop as unknown as React.RefObject<HTMLDivElement>}
       onClick={() => onClick(index)}
       className={`bg-gray-50 rounded-lg shadow-sm aspect-square flex items-center justify-center group cursor-pointer
         hover:bg-gray-100 transition-colors duration-200
