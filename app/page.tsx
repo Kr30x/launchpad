@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Tile from './components/Tile'
 import { DndProvider, useDrop } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
-import { Plus } from 'lucide-react'
+import { Plus, Download, Upload } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import AddTileForm from './components/AddTileForm'
+import { Button } from '@/components/ui/button'
 
 export interface TileData {
   id: string
@@ -53,6 +54,7 @@ export default function Home() {
   const [tiles, setTiles] = useState<TileData[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [selectedPosition, setSelectedPosition] = useState<number | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const gridSize = 36
 
   useEffect(() => {
@@ -131,6 +133,47 @@ export default function Home() {
     setTiles(tiles.filter(tile => tile.id !== id))
   }
 
+  const handleExport = () => {
+    const dataStr = JSON.stringify(tiles, null, 2)
+    const dataBlob = new Blob([dataStr], { type: 'application/json' })
+    const url = URL.createObjectURL(dataBlob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `launchpad-settings-${new Date().toISOString().split('T')[0]}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
+  const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const importedTiles = JSON.parse(e.target?.result as string)
+        if (Array.isArray(importedTiles)) {
+          setTiles(importedTiles)
+        } else {
+          alert('Invalid JSON format')
+        }
+      } catch (error) {
+        alert('Error reading JSON file')
+      }
+    }
+    reader.readAsText(file)
+    
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click()
+  }
+
   const slots = Array(gridSize).fill(null).map((_, index) => {
     // Safe access to tile with optional chaining
     const tile = tiles.find(t => t?.position === index)
@@ -162,6 +205,34 @@ export default function Home() {
   return (
     <DndProvider backend={HTML5Backend}>
       <main className="flex min-h-screen bg-gray-100 justify-center items-center">
+        <div className="absolute top-4 right-4 flex gap-2">
+          <Button
+            onClick={handleExport}
+            variant="outline"
+            size="sm"
+            className="bg-white hover:bg-gray-50"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Экспорт
+          </Button>
+          <Button
+            onClick={handleImportClick}
+            variant="outline"
+            size="sm"
+            className="bg-white hover:bg-gray-50"
+          >
+            <Upload className="h-4 w-4 mr-2" />
+            Импорт
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json"
+            onChange={handleImport}
+            className="hidden"
+          />
+        </div>
+
         <div className="grid grid-cols-6 gap-4 max-w-5xl mx-auto w-3/5 h-3/5">
           {slots}
         </div>
