@@ -27,14 +27,21 @@ interface EmptySlotProps {
   dark: boolean
   onDrop: (dragIndex: number, dropIndex: number) => void
   onClick: (index: number) => void
+  moveFromFolderToMainGrid: (tileId: string, folderId: string) => void
 }
 
-const EmptySlot = ({ index, dark, onDrop, onClick }: EmptySlotProps) => {
+type DragItem = { index: number; id: string; parentFolderId?: string }
+
+const EmptySlot = ({ index, dark, onDrop, onClick, moveFromFolderToMainGrid }: EmptySlotProps) => {
   const [{ isOver }, drop] = useDrop({
     accept: 'tile',
-    drop: (item: { index: number }) => {
-      onDrop(item.index, index)
-      return undefined
+    drop: (item: DragItem) => {
+      if (item.parentFolderId) {
+        moveFromFolderToMainGrid(item.id, item.parentFolderId)
+      } else {
+        onDrop(item.index, index)
+      }
+      return {}
     },
     collect: monitor => ({
       isOver: !!monitor.isOver(),
@@ -184,6 +191,30 @@ export default function Home() {
     })
   }
 
+  const moveFromFolderToMainGrid = (tileId: string, folderId: string) => {
+    setTiles(prevTiles => {
+      const folder = prevTiles.find(t => t.id === folderId)
+      if (!folder) return prevTiles
+      const tileInFolder = (folder.folderTiles || []).find(t => t.id === tileId)
+      if (!tileInFolder) return prevTiles
+
+      // First free position on main grid
+      const usedPositions = new Set(prevTiles.map(t => t.position))
+      let freePos = 0
+      while (usedPositions.has(freePos)) freePos++
+
+      const updatedFolder: TileData = {
+        ...folder,
+        folderTiles: (folder.folderTiles || []).filter(t => t.id !== tileId),
+      }
+      const tileForMain: TileData = { ...tileInFolder, position: freePos }
+
+      return prevTiles
+        .map(t => t.id === folderId ? updatedFolder : t)
+        .concat(tileForMain)
+    })
+  }
+
   const handleExport = () => {
     const dataStr = JSON.stringify(tiles, null, 2)
     const dataBlob = new Blob([dataStr], { type: 'application/json' })
@@ -240,15 +271,15 @@ export default function Home() {
             updateTile={updateTile}
             deleteTile={deleteTile}
             moveTileIntoFolder={moveTileIntoFolder}
+            moveFromFolderToMainGrid={moveFromFolderToMainGrid}
           />
         ) : (
           <EmptySlot
             index={index}
             dark={dark}
-            onDrop={(dragIndex, dropIndex) => {
-              moveTile(dragIndex, dropIndex)
-            }}
+            onDrop={(dragIndex, dropIndex) => moveTile(dragIndex, dropIndex)}
             onClick={handleSlotClick}
+            moveFromFolderToMainGrid={moveFromFolderToMainGrid}
           />
         )}
       </div>

@@ -6,10 +6,10 @@ import { TileData } from '../page'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { FolderTileContent, FolderOverlay } from './FolderTile'
+import { FolderTileContent, FolderOverlay, DragItem } from './FolderTile'
 import { Plus } from 'lucide-react'
 
-const HOVER_DELAY = 700 // ms before a dragged tile is placed into a folder
+const HOVER_DELAY = 700 // ms to hover over a folder before dropping inside
 
 interface TileProps {
   tile: TileData
@@ -17,47 +17,52 @@ interface TileProps {
   moveTile: (dragIndex: number, hoverIndex: number) => void
   updateTile: (updatedTile: TileData) => void
   deleteTile: (id: string) => void
+  // Present when this tile lives on the main grid
   moveTileIntoFolder?: (sourceTilePosition: number, folderId: string) => void
+  moveFromFolderToMainGrid?: (tileId: string, folderId: string) => void
+  // Present when this tile lives inside a folder
+  parentFolderId?: string
+  onMoveToMainGrid?: (tileId: string) => void
 }
 
 export default function Tile({
-  tile, index, moveTile, updateTile, deleteTile, moveTileIntoFolder,
+  tile, index, moveTile, updateTile, deleteTile,
+  moveTileIntoFolder, moveFromFolderToMainGrid,
+  parentFolderId, onMoveToMainGrid,
 }: TileProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editedTile, setEditedTile] = useState(tile)
   const [isFolderOpen, setIsFolderOpen] = useState(false)
 
   // Hover-into-folder state
-  const [hoverReady, setHoverReady] = useState(false) // visual "ready to drop" ring
-  const hoverReadyRef = useRef(false)                 // read synchronously inside drop()
+  const [hoverReady, setHoverReady] = useState(false)
+  const hoverReadyRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const ref = useRef<HTMLDivElement>(null)
   const isFolder = tile.type === 'folder'
 
-  const [{ handlerId, isOver }, drop] = useDrop<
-    { index: number },
-    void,
-    { handlerId: string | symbol | null; isOver: boolean }
-  >({
+  const [{ handlerId, isOver }, drop] = useDrop<DragItem, object, { handlerId: string | symbol | null; isOver: boolean }>({
     accept: 'tile',
-    collect(monitor) {
-      return { handlerId: monitor.getHandlerId(), isOver: !!monitor.isOver() }
-    },
+    collect: monitor => ({ handlerId: monitor.getHandlerId(), isOver: !!monitor.isOver() }),
     drop(item) {
-      // Folder + long hover → move inside
+      // Tile came from a folder → move to main grid
+      if (item.parentFolderId && moveFromFolderToMainGrid) {
+        moveFromFolderToMainGrid(item.id, item.parentFolderId)
+        return {}
+      }
+      // Hover long enough over a folder → move inside
       if (isFolder && hoverReadyRef.current && moveTileIntoFolder) {
         moveTileIntoFolder(item.index, tile.id)
-        return
+        return {}
       }
-      // Default → swap
-      if (item.index !== index) {
-        moveTile(item.index, index)
-      }
+      // Default swap
+      if (item.index !== index) moveTile(item.index, index)
+      return {}
     },
   })
 
-  // Start / cancel the hover timer whenever isOver changes
+  // Start / cancel the folder-hover timer
   useEffect(() => {
     if (isOver && isFolder) {
       timerRef.current = setTimeout(() => {
@@ -70,14 +75,18 @@ export default function Tile({
       hoverReadyRef.current = false
       setHoverReady(false)
     }
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current)
-    }
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
   }, [isOver, isFolder])
 
   const [{ isDragging: isCurrentlyDragging }, drag] = useDrag({
     type: 'tile',
-    item: () => ({ id: tile.id, index }),
+    item: () => ({ id: tile.id, index, parentFolderId }),
+    // If dragged from inside a folder and released on NO target → move to main grid
+    end: (_item, monitor) => {
+      if (parentFolderId && !monitor.didDrop()) {
+        onMoveToMainGrid?.(tile.id)
+      }
+    },
     collect: monitor => ({ isDragging: monitor.isDragging() }),
   })
 
@@ -95,7 +104,7 @@ export default function Tile({
     setIsEditing(false)
   }
 
-  // Unified scale logic (avoids Tailwind hover conflict with inline transform)
+  // Unified scale (avoids Tailwind hover conflict with inline transform)
   const [mouseOver, setMouseOver] = useState(false)
   const getScale = () => {
     if (isCurrentlyDragging) return 0.95
@@ -155,16 +164,13 @@ export default function Tile({
           />
         )}
 
-        {/* "Drop here" indicator — appears when timer fires */}
+        {/* "Drop here" indicator */}
         {isFolder && hoverReady && (
           <div
             className="absolute inset-0 flex items-center justify-center rounded-2xl pointer-events-none"
             style={{ background: 'rgba(255,255,255,0.18)' }}
           >
-            <div
-              className="w-10 h-10 rounded-full flex items-center justify-center"
-              style={{ background: 'rgba(255,255,255,0.85)' }}
-            >
+            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.85)' }}>
               <Plus className="w-5 h-5 text-blue-600" />
             </div>
           </div>
@@ -194,6 +200,7 @@ export default function Tile({
           isOpen={isFolderOpen}
           onClose={() => setIsFolderOpen(false)}
           updateTile={updateTile}
+          onMoveToMainGrid={(tileId) => moveFromFolderToMainGrid?.(tileId, tile.id)}
         />
       )}
 
@@ -203,7 +210,6 @@ export default function Tile({
           <DialogHeader>
             <DialogTitle>{isFolder ? 'Edit Folder' : 'Edit Tile'}</DialogTitle>
           </DialogHeader>
-
           <div className="p-4 space-y-4">
             {isFolder ? (
               <>
@@ -236,7 +242,6 @@ export default function Tile({
                     placeholder="https://..."
                   />
                 </div>
-
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wide">Display Mode</label>
                   <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
@@ -245,66 +250,37 @@ export default function Tile({
                         key={mode}
                         onClick={() => setEditedTile({ ...editedTile, displayMode: mode })}
                         className={`flex-1 py-1.5 rounded-md text-sm font-medium capitalize transition-all duration-150
-                          ${editedTile.displayMode === mode
-                            ? 'bg-white shadow-sm text-gray-900'
-                            : 'text-gray-500 hover:text-gray-700'}`}
+                          ${editedTile.displayMode === mode ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
                       >
                         {mode}
                       </button>
                     ))}
                   </div>
                 </div>
-
                 {editedTile.displayMode === 'icon' ? (
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wide">Icon URL</label>
-                    <Input
-                      value={editedTile.icon}
-                      onChange={e => setEditedTile({ ...editedTile, icon: e.target.value })}
-                      placeholder="/icons/example.png"
-                    />
+                    <Input value={editedTile.icon} onChange={e => setEditedTile({ ...editedTile, icon: e.target.value })} placeholder="/icons/example.png" />
                   </div>
                 ) : (
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wide">Display Text</label>
-                    <Input
-                      value={editedTile.text || ''}
-                      onChange={e => setEditedTile({ ...editedTile, text: e.target.value })}
-                      placeholder="Text"
-                    />
+                    <Input value={editedTile.text || ''} onChange={e => setEditedTile({ ...editedTile, text: e.target.value })} placeholder="Text" />
                   </div>
                 )}
-
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wide">Background Color</label>
-                  <Input
-                    type="color"
-                    value={editedTile.backgroundColor || '#ffffff'}
-                    onChange={e => setEditedTile({ ...editedTile, backgroundColor: e.target.value })}
-                    className="h-10 cursor-pointer"
-                  />
+                  <Input type="color" value={editedTile.backgroundColor || '#ffffff'} onChange={e => setEditedTile({ ...editedTile, backgroundColor: e.target.value })} className="h-10 cursor-pointer" />
                 </div>
-
                 {editedTile.icon && editedTile.displayMode === 'icon' && (
-                  <div
-                    className="h-24 rounded-xl flex items-center justify-center"
-                    style={{ backgroundColor: editedTile.backgroundColor }}
-                  >
-                    <img
-                      src={editedTile.icon}
-                      alt="Preview"
-                      className="h-16 w-16 object-contain"
-                      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-                    />
+                  <div className="h-24 rounded-xl flex items-center justify-center" style={{ backgroundColor: editedTile.backgroundColor }}>
+                    <img src={editedTile.icon} alt="Preview" className="h-16 w-16 object-contain" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
                   </div>
                 )}
               </>
             )}
-
             <div className="flex justify-end pt-2">
-              <Button onClick={handleSave} className="bg-gray-900 hover:bg-gray-800 text-white px-5">
-                Save Changes
-              </Button>
+              <Button onClick={handleSave} className="bg-gray-900 hover:bg-gray-800 text-white px-5">Save Changes</Button>
             </div>
           </div>
         </DialogContent>

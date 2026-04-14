@@ -1,13 +1,54 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { useDrop } from 'react-dnd'
 import { TileData } from '../page'
 import Tile from './Tile'
 import AddTileForm from './AddTileForm'
 import { Plus, X } from 'lucide-react'
 
 const FOLDER_GRID_SIZE = 25 // 5×5
+
+export type DragItem = { index: number; id: string; parentFolderId?: string }
+
+// ─── Empty slot inside folder — accepts drops from within the same folder ────
+
+function FolderEmptySlot({
+  idx,
+  folderId,
+  onMoveTile,
+  onAdd,
+}: {
+  idx: number
+  folderId: string
+  onMoveTile: (fromIdx: number, toIdx: number) => void
+  onAdd: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [{ isOver }, drop] = useDrop<DragItem, object, { isOver: boolean }>({
+    accept: 'tile',
+    canDrop: item => item.parentFolderId === folderId,
+    drop: item => { onMoveTile(item.index, idx); return {} },
+    collect: monitor => ({ isOver: monitor.isOver() && monitor.canDrop() }),
+  })
+  drop(ref)
+
+  return (
+    <div
+      ref={ref}
+      className="w-full h-full aspect-square rounded-2xl flex items-center justify-center group cursor-pointer"
+      style={{
+        background: isOver ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.06)',
+        border: `1.5px dashed ${isOver ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.16)'}`,
+        transition: 'background 0.15s ease, border-color 0.15s ease',
+      }}
+      onClick={() => { if (!isOver) onAdd() }}
+    >
+      <Plus className="w-4 h-4 text-white/25 group-hover:text-white/60 transition-colors duration-150" />
+    </div>
+  )
+}
 
 // ─── Overlay ────────────────────────────────────────────────────────────────
 
@@ -16,14 +57,18 @@ interface FolderOverlayProps {
   isOpen: boolean
   onClose: () => void
   updateTile: (updated: TileData) => void
+  onMoveToMainGrid: (tileId: string) => void
 }
 
-export function FolderOverlay({ tile, isOpen, onClose, updateTile }: FolderOverlayProps) {
+export function FolderOverlay({
+  tile, isOpen, onClose, updateTile, onMoveToMainGrid,
+}: FolderOverlayProps) {
   const [isMounted, setIsMounted] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
   const [addingAtPosition, setAddingAtPosition] = useState<number | null>(null)
   const [addPanelVisible, setAddPanelVisible] = useState(false)
 
+  // Escape key
   useEffect(() => {
     if (!isOpen) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -31,6 +76,7 @@ export function FolderOverlay({ tile, isOpen, onClose, updateTile }: FolderOverl
     return () => window.removeEventListener('keydown', onKey)
   }, [isOpen, onClose])
 
+  // Mount / visibility animation
   useEffect(() => {
     if (isOpen) {
       setIsMounted(true)
@@ -54,20 +100,21 @@ export function FolderOverlay({ tile, isOpen, onClose, updateTile }: FolderOverl
     }
   }, [addingAtPosition])
 
+  // ── Folder tile handlers ──────────────────────────────────────────────────
+
   const handleMoveTileInFolder = (dragIndex: number, dropIndex: number) => {
     const ft = [...(tile.folderTiles || [])]
     const di = ft.findIndex(t => t.position === dragIndex)
     const dri = ft.findIndex(t => t.position === dropIndex)
-    if (di !== -1) {
-      if (dri !== -1) {
-        const tmp = ft[di].position
-        ft[di] = { ...ft[di], position: ft[dri].position }
-        ft[dri] = { ...ft[dri], position: tmp }
-      } else {
-        ft[di] = { ...ft[di], position: dropIndex }
-      }
-      updateTile({ ...tile, folderTiles: ft })
+    if (di === -1) return
+    if (dri !== -1) {
+      const tmp = ft[di].position
+      ft[di] = { ...ft[di], position: ft[dri].position }
+      ft[dri] = { ...ft[dri], position: tmp }
+    } else {
+      ft[di] = { ...ft[di], position: dropIndex }
     }
+    updateTile({ ...tile, folderTiles: ft })
   }
 
   const handleUpdateInFolder = (updated: TileData) =>
@@ -82,6 +129,14 @@ export function FolderOverlay({ tile, isOpen, onClose, updateTile }: FolderOverl
     updateTile({ ...tile, folderTiles: [...(tile.folderTiles || []), newTile] })
     setAddingAtPosition(null)
   }
+
+  // Panel drop — absorbs drops on panel gaps so they don't trigger "move to main grid"
+  const panelRef = useRef<HTMLDivElement>(null)
+  const [, panelDrop] = useDrop<DragItem, object, never>({
+    accept: 'tile',
+    drop: () => ({}), // non-undefined = "handled", prevents end() from firing
+  })
+  panelDrop(panelRef)
 
   if (!isMounted) return null
 
@@ -120,28 +175,22 @@ export function FolderOverlay({ tile, isOpen, onClose, updateTile }: FolderOverl
         }}
         onClick={e => e.stopPropagation()}
       >
+        {/* panelRef absorbs gaps between tiles */}
         <div
+          ref={panelRef}
           style={{
             background: 'rgba(255,255,255,0.12)',
             backdropFilter: 'blur(48px) saturate(180%)',
             border: '1px solid rgba(255,255,255,0.18)',
             borderRadius: 32,
             boxShadow: '0 40px 100px rgba(0,0,0,0.45), 0 8px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.18)',
-            padding: 28,
+            padding: 20,
             boxSizing: 'border-box',
             overflow: 'hidden',
-            // border-box: total width = 5 tiles + 4 gaps + 2 × padding
-            width: 'calc(5 * var(--launchpad-tile, 120px) + 4 * 16px + 56px)',
+            width: 'min(calc(5 * var(--launchpad-tile, 100px) + 4 * 16px + 40px), calc(100vw - 48px))',
           }}
         >
-          {/* 5×5 grid — same tile size as main grid */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(5, 1fr)',
-              gap: 16,
-            }}
-          >
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
             {Array(FOLDER_GRID_SIZE).fill(null).map((_, idx) => {
               const t = (tile.folderTiles || []).find(ft => ft.position === idx)
               return (
@@ -150,32 +199,19 @@ export function FolderOverlay({ tile, isOpen, onClose, updateTile }: FolderOverl
                     <Tile
                       tile={t}
                       index={idx}
+                      parentFolderId={tile.id}
                       moveTile={handleMoveTileInFolder}
                       updateTile={handleUpdateInFolder}
                       deleteTile={handleDeleteFromFolder}
+                      onMoveToMainGrid={onMoveToMainGrid}
                     />
                   ) : (
-                    <button
-                      onClick={() => setAddingAtPosition(idx)}
-                      className="w-full h-full rounded-2xl flex items-center justify-center group"
-                      style={{
-                        background: 'rgba(255,255,255,0.06)',
-                        border: '1.5px dashed rgba(255,255,255,0.16)',
-                        transition: 'background 0.15s ease, border-color 0.15s ease',
-                      }}
-                      onMouseEnter={e => {
-                        const el = e.currentTarget as HTMLElement
-                        el.style.background = 'rgba(255,255,255,0.13)'
-                        el.style.borderColor = 'rgba(255,255,255,0.32)'
-                      }}
-                      onMouseLeave={e => {
-                        const el = e.currentTarget as HTMLElement
-                        el.style.background = 'rgba(255,255,255,0.06)'
-                        el.style.borderColor = 'rgba(255,255,255,0.16)'
-                      }}
-                    >
-                      <Plus className="w-4 h-4 text-white/25 group-hover:text-white/60 transition-colors duration-150" />
-                    </button>
+                    <FolderEmptySlot
+                      idx={idx}
+                      folderId={tile.id}
+                      onMoveTile={handleMoveTileInFolder}
+                      onAdd={() => setAddingAtPosition(idx)}
+                    />
                   )}
                 </div>
               )
@@ -243,31 +279,21 @@ interface FolderTileContentProps {
 
 export function FolderTileContent({ tile }: FolderTileContentProps) {
   const name = tile.folderName || 'Folder'
-
   return (
     <div className="w-full h-full flex flex-col items-center justify-center px-2 gap-1.5">
-      {/* Subtle folder glyph */}
-      <svg
-        viewBox="0 0 28 22"
-        fill="none"
-        className="w-6 h-5 flex-shrink-0"
-        aria-hidden
-      >
+      <svg viewBox="0 0 28 22" fill="none" className="w-6 h-5 flex-shrink-0" aria-hidden>
         <path
           d="M0 4C0 2.9 0.9 2 2 2H10L13 6H26C27.1 6 28 6.9 28 8V20C28 21.1 27.1 22 26 22H2C0.9 22 0 21.1 0 20V4Z"
-          fill="white"
-          fillOpacity={0.55}
+          fill="white" fillOpacity={0.55}
         />
       </svg>
-
-      {/* Folder name */}
       <span
-        className="text-white text-center leading-tight font-semibold line-clamp-2 w-full"
+        className="text-white text-center leading-tight font-semibold w-full"
         style={{
           fontSize: 11,
           textShadow: '0 1px 4px rgba(0,0,0,0.3)',
-          WebkitLineClamp: 2,
           display: '-webkit-box',
+          WebkitLineClamp: 2,
           WebkitBoxOrient: 'vertical',
           overflow: 'hidden',
         }}
