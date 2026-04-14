@@ -25,6 +25,13 @@ export function FolderOverlay({ tile, isOpen, onClose, updateTile }: FolderOverl
   const [addPanelVisible, setAddPanelVisible] = useState(false)
 
   useEffect(() => {
+    if (!isOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isOpen, onClose])
+
+  useEffect(() => {
     if (isOpen) {
       setIsMounted(true)
       requestAnimationFrame(() => requestAnimationFrame(() => setIsVisible(true)))
@@ -121,7 +128,9 @@ export function FolderOverlay({ tile, isOpen, onClose, updateTile }: FolderOverl
             borderRadius: 32,
             boxShadow: '0 40px 100px rgba(0,0,0,0.45), 0 8px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.18)',
             padding: 28,
-            // Panel width = 5 tiles + 4 gaps + 2 × padding
+            boxSizing: 'border-box',
+            overflow: 'hidden',
+            // border-box: total width = 5 tiles + 4 gaps + 2 × padding
             width: 'calc(5 * var(--launchpad-tile, 120px) + 4 * 16px + 56px)',
           }}
         >
