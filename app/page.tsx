@@ -159,6 +159,31 @@ export default function Home() {
     setTiles(tiles.filter(tile => tile.id !== id))
   }
 
+  const moveTileIntoFolder = (sourceTilePosition: number, folderId: string) => {
+    setTiles(prevTiles => {
+      const sourceIdx = prevTiles.findIndex(t => t.position === sourceTilePosition)
+      const folderIdx = prevTiles.findIndex(t => t.id === folderId)
+      if (sourceIdx === -1 || folderIdx === -1) return prevTiles
+
+      const sourceTile = prevTiles[sourceIdx]
+      const folder = prevTiles[folderIdx]
+
+      // First free slot inside the folder
+      const used = new Set((folder.folderTiles || []).map(t => t.position))
+      let slot = 0
+      while (used.has(slot)) slot++
+
+      const updatedFolder: TileData = {
+        ...folder,
+        folderTiles: [...(folder.folderTiles || []), { ...sourceTile, position: slot }],
+      }
+
+      return prevTiles
+        .filter((_, i) => i !== sourceIdx)
+        .map(t => t.id === folderId ? updatedFolder : t)
+    })
+  }
+
   const handleExport = () => {
     const dataStr = JSON.stringify(tiles, null, 2)
     const dataBlob = new Blob([dataStr], { type: 'application/json' })
@@ -214,6 +239,7 @@ export default function Home() {
             moveTile={moveTile}
             updateTile={updateTile}
             deleteTile={deleteTile}
+            moveTileIntoFolder={moveTileIntoFolder}
           />
         ) : (
           <EmptySlot
