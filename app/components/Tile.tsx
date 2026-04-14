@@ -5,7 +5,8 @@ import { useDrag, useDrop } from 'react-dnd'
 import { TileData } from '../page'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { FolderTileContent, FolderOverlay } from './FolderTile'
 
 interface TileProps {
   tile: TileData
@@ -18,68 +19,61 @@ interface TileProps {
 export default function Tile({ tile, index, moveTile, updateTile, deleteTile }: TileProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editedTile, setEditedTile] = useState(tile)
-  const [isDragging, setIsDragging] = useState(false)
+  const [isFolderOpen, setIsFolderOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+
   const [{ handlerId }, drop] = useDrop<{ index: number }, void, { handlerId: string | symbol | null }>({
     accept: 'tile',
     collect(monitor) {
-      return {
-        handlerId: monitor.getHandlerId(),
-      }
+      return { handlerId: monitor.getHandlerId() }
     },
     drop(item) {
       if (item.index !== index) {
-        console.log('Dropping tile:', item.index, 'onto:', index)
         moveTile(item.index, index)
       }
-    }
+    },
   })
 
   const [{ isDragging: isCurrentlyDragging }, drag] = useDrag({
     type: 'tile',
-    item: () => {
-      console.log('Started dragging tile at index:', index)
-      setIsDragging(true)
-      return { id: tile.id, index }
-    },
-    collect: (monitor) => ({
-      isDragging: monitor.isDragging(),
-    }),
-    end: (item, monitor) => {
-      setIsDragging(false)
-      const didDrop = monitor.didDrop()
-      if (!didDrop) {
-        console.log('Drag cancelled')
-      }
-    },
+    item: () => ({ id: tile.id, index }),
+    collect: monitor => ({ isDragging: monitor.isDragging() }),
   })
 
-  const dragDropRef = drag(drop(ref))
+  drag(drop(ref))
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (!isCurrentlyDragging && !e.defaultPrevented) {
+      if (tile.type === 'folder') {
+        setIsFolderOpen(true)
+      } else {
+        window.open(tile.url, '_blank')
+      }
+    }
+  }
 
   const handleSave = () => {
     updateTile({ ...editedTile, position: tile.position })
     setIsEditing(false)
   }
 
-  const handleClick = (e: React.MouseEvent) => {
-    if (!isCurrentlyDragging && !e.defaultPrevented) {
-      window.open(tile.url, '_blank')
-    }
-  }
+  const isFolder = tile.type === 'folder'
 
   return (
     <>
       <div
         ref={ref}
         onClick={handleClick}
-        style={{ backgroundColor: tile.backgroundColor || 'white' }}
-        className={`group relative p-3 rounded-lg shadow-sm cursor-move aspect-square w-full h-full
-          hover:shadow-md transition-all duration-200 
-          ${isCurrentlyDragging ? 'opacity-50' : ''}`}
+        style={{ backgroundColor: tile.backgroundColor || (isFolder ? '#2563eb' : 'white') }}
+        className={`group relative rounded-2xl cursor-move aspect-square w-full h-full
+          transition-all duration-200 shadow-[0_2px_12px_rgba(0,0,0,0.25)] hover:shadow-[0_4px_24px_rgba(0,0,0,0.35)] hover:scale-[1.03]
+          ${isCurrentlyDragging ? 'opacity-50 scale-95' : ''}`}
         data-handler-id={handlerId}
       >
         <div className="flex flex-col items-center justify-center h-full w-full">
-          {tile.displayMode === 'icon' ? (
+          {isFolder ? (
+            <FolderTileContent tile={tile} />
+          ) : tile.displayMode === 'icon' ? (
             tile.icon && (
               <img
                 src={tile.icon}
@@ -94,129 +88,144 @@ export default function Tile({ tile, index, moveTile, updateTile, deleteTile }: 
             </span>
           )}
         </div>
-        
+
+        {/* macOS-style control dots */}
         <div className="absolute top-2 left-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
           <button
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              deleteTile(tile.id)
-            }}
-            className="w-3 h-3 rounded-full bg-[#FF5F57] hover:bg-[#FF4A47] 
-              transition-colors duration-200 shadow-sm
-              flex items-center justify-center group/button"
+            onClick={e => { e.preventDefault(); e.stopPropagation(); deleteTile(tile.id) }}
+            className="w-3 h-3 rounded-full bg-[#FF5F57] hover:bg-[#FF4A47] transition-colors duration-200 shadow-sm flex items-center justify-center group/btn"
           >
-            <span className="opacity-0 group-hover/button:opacity-100 text-[8px] text-[#800000]">×</span>
+            <span className="opacity-0 group-hover/btn:opacity-100 text-[8px] text-[#800000]">×</span>
           </button>
           <button
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              setIsEditing(true)
-            }}
-            className="w-3 h-3 rounded-full bg-[#FFBD2E] hover:bg-[#FFB214] 
-              transition-colors duration-200 shadow-sm
-              flex items-center justify-center group/button"
+            onClick={e => { e.preventDefault(); e.stopPropagation(); setEditedTile(tile); setIsEditing(true) }}
+            className="w-3 h-3 rounded-full bg-[#FFBD2E] hover:bg-[#FFB214] transition-colors duration-200 shadow-sm flex items-center justify-center group/btn"
           >
-            <span className="opacity-0 group-hover/button:opacity-100 text-[8px] text-[#805B17]">●</span>
+            <span className="opacity-0 group-hover/btn:opacity-100 text-[8px] text-[#805B17]">●</span>
           </button>
         </div>
       </div>
 
+      {/* Folder overlay */}
+      {isFolder && (
+        <FolderOverlay
+          tile={tile}
+          isOpen={isFolderOpen}
+          onClose={() => setIsFolderOpen(false)}
+          updateTile={updateTile}
+        />
+      )}
+
+      {/* Edit dialog */}
       <Dialog open={isEditing} onOpenChange={setIsEditing}>
-        <DialogContent className="max-w-3xl w-full min-h-[80vh] flex flex-col">
+        <DialogContent className="max-w-md w-full">
           <DialogHeader>
-            <DialogTitle>Edit Tile</DialogTitle>
+            <DialogTitle>{isFolder ? 'Edit Folder' : 'Edit Tile'}</DialogTitle>
           </DialogHeader>
-          
-          <div className="flex-1 p-6">
-            <Input
-              type="url"
-              value={editedTile.url}
-              onChange={(e) => setEditedTile({ ...editedTile, url: e.target.value })}
-              placeholder="URL"
-              className="mb-4"
-              required
-            />
 
-            <div className="mb-4">
-              <label className="block text-sm text-gray-500 mb-2">Display Mode:</label>
-              <div className="flex gap-4">
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="displayMode"
-                    value="icon"
-                    checked={editedTile.displayMode === 'icon'}
-                    onChange={(e) => setEditedTile({ ...editedTile, displayMode: 'icon' })}
-                    className="mr-2"
-                  />
-                  Icon
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="displayMode"
-                    value="text"
-                    checked={editedTile.displayMode === 'text'}
-                    onChange={(e) => setEditedTile({ ...editedTile, displayMode: 'text' })}
-                    className="mr-2"
-                  />
-                  Text
-                </label>
-              </div>
-            </div>
-
-            {editedTile.displayMode === 'icon' ? (
-              <Input
-                type="text"
-                value={editedTile.icon}
-                onChange={(e) => setEditedTile({ ...editedTile, icon: e.target.value })}
-                placeholder="Icon path"
-                className="mb-4"
-              />
-            ) : (
-              <Input
-                type="text"
-                value={editedTile.text || ''}
-                onChange={(e) => setEditedTile({ ...editedTile, text: e.target.value })}
-                placeholder="Display Text"
-                className="mb-4"
-                required
-              />
-            )}
-
-            <div className="mb-6">
-              <label className="block text-sm text-gray-500 mb-1">Background Color:</label>
-              <Input
-                type="color"
-                value={editedTile.backgroundColor || '#ffffff'}
-                onChange={(e) => setEditedTile({ ...editedTile, backgroundColor: e.target.value })}
-                className="w-full h-10"
-              />
-            </div>
-            
-            {editedTile.icon && (
-              <div className="mb-6">
-                <p className="text-sm text-gray-500 mb-2">Preview:</p>
-                <div 
-                  className="w-full h-[200px] rounded-lg flex items-center justify-center"
-                  style={{ backgroundColor: editedTile.backgroundColor }}
-                >
-                  <img
-                    src={editedTile.icon}
-                    alt="Icon preview"
-                    className="w-20 h-20 object-contain"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none'
-                    }}
+          <div className="p-4 space-y-4">
+            {isFolder ? (
+              /* ── Folder edit: just rename + background ── */
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wide">Folder Name</label>
+                  <Input
+                    value={editedTile.folderName || ''}
+                    onChange={e => setEditedTile({ ...editedTile, folderName: e.target.value })}
+                    placeholder="My Folder"
                   />
                 </div>
-              </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wide">Background Color</label>
+                  <Input
+                    type="color"
+                    value={editedTile.backgroundColor || '#4a7dbd'}
+                    onChange={e => setEditedTile({ ...editedTile, backgroundColor: e.target.value })}
+                    className="h-10 cursor-pointer"
+                  />
+                </div>
+              </>
+            ) : (
+              /* ── Link edit ── */
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wide">URL</label>
+                  <Input
+                    type="url"
+                    value={editedTile.url}
+                    onChange={e => setEditedTile({ ...editedTile, url: e.target.value })}
+                    placeholder="https://..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wide">Display Mode</label>
+                  <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
+                    {(['icon', 'text'] as const).map(mode => (
+                      <button
+                        key={mode}
+                        onClick={() => setEditedTile({ ...editedTile, displayMode: mode })}
+                        className={`flex-1 py-1.5 rounded-md text-sm font-medium capitalize transition-all duration-150
+                          ${editedTile.displayMode === mode
+                            ? 'bg-white shadow-sm text-gray-900'
+                            : 'text-gray-500 hover:text-gray-700'}`}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {editedTile.displayMode === 'icon' ? (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wide">Icon URL</label>
+                    <Input
+                      value={editedTile.icon}
+                      onChange={e => setEditedTile({ ...editedTile, icon: e.target.value })}
+                      placeholder="/icons/example.png"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wide">Display Text</label>
+                    <Input
+                      value={editedTile.text || ''}
+                      onChange={e => setEditedTile({ ...editedTile, text: e.target.value })}
+                      placeholder="Text"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wide">Background Color</label>
+                  <Input
+                    type="color"
+                    value={editedTile.backgroundColor || '#ffffff'}
+                    onChange={e => setEditedTile({ ...editedTile, backgroundColor: e.target.value })}
+                    className="h-10 cursor-pointer"
+                  />
+                </div>
+
+                {editedTile.icon && editedTile.displayMode === 'icon' && (
+                  <div
+                    className="h-24 rounded-xl flex items-center justify-center"
+                    style={{ backgroundColor: editedTile.backgroundColor }}
+                  >
+                    <img
+                      src={editedTile.icon}
+                      alt="Preview"
+                      className="h-16 w-16 object-contain"
+                      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                    />
+                  </div>
+                )}
+              </>
             )}
-            
-            <div className="flex justify-end gap-2">
-              <Button onClick={handleSave}>Save Changes</Button>
+
+            <div className="flex justify-end pt-2">
+              <Button onClick={handleSave} className="bg-gray-900 hover:bg-gray-800 text-white px-5">
+                Save Changes
+              </Button>
             </div>
           </div>
         </DialogContent>
