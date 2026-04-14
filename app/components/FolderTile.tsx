@@ -279,8 +279,43 @@ interface FolderTileContentProps {
 
 export function FolderTileContent({ tile }: FolderTileContentProps) {
   const name = tile.folderName || 'Folder'
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [fontSize, setFontSize] = useState(11)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+
+    const computeFontSize = () => {
+      const containerWidth = el.clientWidth - 16 // subtract px-2 padding (8px × 2)
+      if (containerWidth <= 0) return
+
+      const words = name.split(/\s+/).filter(Boolean)
+      if (words.length === 0) return
+
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+
+      for (let size = 11; size >= 6; size -= 0.5) {
+        ctx.font = `600 ${size}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
+        const maxWordWidth = Math.max(...words.map(w => ctx.measureText(w).width))
+        if (maxWordWidth <= containerWidth) {
+          setFontSize(size)
+          return
+        }
+      }
+      setFontSize(6)
+    }
+
+    computeFontSize()
+    const ro = new ResizeObserver(computeFontSize)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [name])
+
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center px-2 gap-1.5">
+    <div ref={containerRef} className="w-full h-full flex flex-col items-center justify-center px-2 gap-1.5">
       <svg viewBox="0 0 28 22" fill="none" className="w-6 h-5 flex-shrink-0" aria-hidden>
         <path
           d="M0 4C0 2.9 0.9 2 2 2H10L13 6H26C27.1 6 28 6.9 28 8V20C28 21.1 27.1 22 26 22H2C0.9 22 0 21.1 0 20V4Z"
@@ -290,7 +325,7 @@ export function FolderTileContent({ tile }: FolderTileContentProps) {
       <span
         className="text-white text-center leading-tight font-semibold w-full"
         style={{
-          fontSize: 11,
+          fontSize,
           textShadow: '0 1px 4px rgba(0,0,0,0.3)',
           display: '-webkit-box',
           WebkitLineClamp: 2,
